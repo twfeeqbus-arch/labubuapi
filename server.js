@@ -2,7 +2,8 @@ const http = require('http');
 const fs = require('fs');
 
 const DATA_FILE = './tiers.json';
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+const SECRET = 'labubu_secret_key';
 
 if (!fs.existsSync(DATA_FILE)) {
   fs.writeFileSync(DATA_FILE, JSON.stringify({}));
@@ -18,11 +19,18 @@ function saveTiers(data) {
 
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Content-Type', 'application/json');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // GET /tier?ign=PlayerName
   if (req.method === 'GET' && url.pathname === '/tier') {
     const ign = url.searchParams.get('ign')?.toLowerCase();
     if (!ign) return res.end(JSON.stringify({ error: 'No IGN provided' }));
@@ -32,22 +40,25 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ ign, tier }));
   }
 
-  // POST /tier  body: { ign, tier, secret }
   if (req.method === 'POST' && url.pathname === '/tier') {
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', () => {
       try {
-        const { ign, tier, secret } = JSON.parse(body);
-        if (secret !== process.env.API_SECRET || 'labubu_secret_key') {
+        const parsed = JSON.parse(body);
+        const { ign, tier, secret } = parsed;
+        console.log('Received tier update:', ign, tier, secret);
+        if (secret !== SECRET) {
           res.statusCode = 401;
           return res.end(JSON.stringify({ error: 'Unauthorized' }));
         }
         const tiers = loadTiers();
         tiers[ign.toLowerCase()] = tier;
         saveTiers(tiers);
+        console.log('Saved tier:', ign, tier);
         return res.end(JSON.stringify({ success: true, ign, tier }));
       } catch (e) {
+        console.error('Error:', e);
         res.statusCode = 400;
         return res.end(JSON.stringify({ error: 'Invalid body' }));
       }
